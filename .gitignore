@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Experiment outputs and tracking
+wandb/
+logs/
+checkpoints/
+outputs/
+runs/
+*.ckpt
+*.pth
+*.pt
+
+# Extracted datasets and feature tensors
+data/
+datasets/
+embeddings/
+*.npy
+*.npz
+
+# Notebooks and operating-system files
+.ipynb_checkpoints/
+.DS_Store

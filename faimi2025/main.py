@@ -2,20 +2,17 @@ import os
 
 os.environ['WANDB_INIT_TIMEOUT'] = '600'  # 10 minutes
 
-import argparse
-from functools import partial
 from dataclasses import dataclass
-from typing import Type, Tuple, Dict, Any
+from functools import partial
+from typing import Any, Dict, Tuple, Type
 
-import wandb
 import numpy as np
-from tqdm import tqdm
-from torch.utils.data import DataLoader, WeightedRandomSampler
-
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader
+import wandb
+from torch.utils.data import DataLoader, WeightedRandomSampler
+from tqdm import tqdm
 
 from utils import datasets_med as dsets
 from utils.datasets import get_dataloaders
@@ -24,19 +21,33 @@ from utils.models import PrototypeTransformer
 from utils.utils import init_model, train_ensemble, get_train_loader
 from utils.misc import DummyRun, fix_random_seed, describe_dataset_splits
 
+def str_to_bool(value: str | bool) -> bool:
+    """Parse an explicit boolean command-line value."""
+    if isinstance(value, bool):
+        return value
+    normalized = value.lower()
+    if normalized in {'true', '1', 'yes', 'y'}:
+        return True
+    if normalized in {'false', '0', 'no', 'n'}:
+        return False
+    raise ValueError(f'Expected a boolean value, got {value!r}.')
+
+
+SLURM_JOB_ID = os.getenv('SLURM_JOB_ID', 'local')
+
 GLOBAL_DEFAULTS = {
     "run_name": "default_run",
     "log_dir": "./logs",
-    "db": (bool, False),
-    "slurm_id": os.environ['SLURM_JOB_ID'],
+    "db": (str_to_bool, False),
+    "slurm_id": SLURM_JOB_ID,
     "suffix": "",
     "wdb_group": 'null',
     "seed": 42,
     "data_dir": '',
     "metadata_path": '',
-    "multiclass": (bool, None),
-    "ckpt_dir": f"/checkpoint/minht/{os.environ['SLURM_JOB_ID']}",
-    "norm_emb": (bool, None),
+    "multiclass": (str_to_bool, None),
+    "ckpt_dir": f"./logs/{SLURM_JOB_ID}",
+    "norm_emb": (str_to_bool, None),
 }
 
 
@@ -68,11 +79,10 @@ class Args:
     ff_dim: int = 1024
     alpha: float = 0.1
 
-    def update_with_dict(self, extra: dict):
+    def update_with_dict(self, extra: dict) -> None:
         for k, v in extra.items():
-                if hasattr(self, k):
-                    if (v is not None) and (v != ''):
-                        setattr(self, k, v)
+            if hasattr(self, k) and v is not None and v != '':
+                setattr(self, k, v)
 
 
 class ArgsParser:
@@ -122,13 +132,14 @@ class ArgsParser:
 
 
 def init_dataset(args, split_map=None):
-    # Simulate dsets dictionary
-    datasets = dict()
+    """Load split-specific pre-extracted features and their metadata."""
+    datasets = {}
     split_map = split_map if split_map is not None else {'train': 'tr', 'val': 'va', 'test': 'te'}
     for split in split_map.keys():
         features = np.load(f"{args.data_dir}/feats_{split_map[split]}.npy")
         if args.norm_emb:
-            features = ((features - features.mean(axis=1, keepdims=True)) / features.std(axis=1, keepdims=True))
+            std = features.std(axis=1, keepdims=True).clip(min=1e-12)
+            features = (features - features.mean(axis=1, keepdims=True)) / std
         split_key = split_map[split]
         datasets[split] = vars(dsets)[args.dataset_name](
             root=args.data_dir,
@@ -144,7 +155,7 @@ def init_dataset(args, split_map=None):
 
 
 def get_class_balanced_sampler(dataset):
-    # Assumes dataset returns (index, filename, label, attr, group, features)
+    """Return a replacement sampler with inverse-frequency class weights."""
     targets = [int(dataset[i][2]) for i in range(len(dataset))]  # extract labels
 
     class_counts = np.bincount(targets)
@@ -153,8 +164,8 @@ def get_class_balanced_sampler(dataset):
 
     sampler = WeightedRandomSampler(
         weights=sample_weights,
-        num_samples=len(sample_weights),  # or a multiple for over-sampling
-        replacement=True  # allow repeated samples
+        num_samples=len(sample_weights),
+        replacement=True,
     )
     return sampler
 
@@ -165,7 +176,7 @@ def train(eval_splits=None, balance_sampling=True, *args, **kwargs):
     eval_splits = ['train_eval', 'val', 'test'] if eval_splits is None else eval_splits
     tracking_metrics = ['loss', 'acc', 'bacc', 'wga']
 
-    loaders = dict()
+    loaders = {}
     # loaders['train'] = DataLoader(datasets['train'], batch_size=args.batch_size_train, shuffle=True)
     if balance_sampling:
         sampler = get_class_balanced_sampler(datasets['train'])
@@ -199,8 +210,8 @@ def train(eval_splits=None, balance_sampling=True, *args, **kwargs):
     else:
         raise ValueError('Not implemented scheduler')
 
-    metrics = dict()
-    all_res = dict()
+    metrics = {}
+    all_res = {}
     for split in eval_splits:
         all_res[split] = []
         metrics[split] = dict()
@@ -345,7 +356,7 @@ def train_dpe(run=None, *args, **kwargs):
     split_map = {'val': args.trn_split, 'test': 'te'}  # 'train': 'tr'
     datasets = init_dataset(args, split_map=split_map)
 
-    dataloaders = dict()
+    dataloaders = {}
     for split in ['val', 'test']:
         dataloaders[split] = DataLoader(dataset=datasets[split], num_workers=0, pin_memory=False,
                                         batch_size=args.batch_size_eval, shuffle=False, drop_last=False)
@@ -363,7 +374,7 @@ def train_dpe(run=None, *args, **kwargs):
                                   dataset_name=args.dataset_name, trn_split=args.trn_split,
                                   batch_size=args.batch_size_train, metadata_path=args.metadata_path, transform=None,
                                   multiclass=args.multiclass),
-        init_model_func=partial(init_model, device='cuda', num_classes=num_classes),
+        init_model_func=partial(init_model, device=args.device, num_classes=num_classes),
         run=run,
     )
 
@@ -398,7 +409,7 @@ def train_transformer(_pe, run=None, *args, **kwargs):
         dropout=0.1,
         d_model=args.d_model,
         train_mode='freeze',
-    ).to('cuda')
+    ).to(args.device)
 
     loaders = get_dataloaders(datasets, batch_size_train=args.batch_size_train, batch_size_eval=256, workers=0,
                               stage=-1,
@@ -448,7 +459,7 @@ def main():
     parser = ArgsParser(Args, Args, global_args=GLOBAL_DEFAULTS)
     dpe_args, transformer_args, global_args = parser.parse()
 
-    # Log to wandb
+    # Use a no-op tracking run for local debugging and tests.
     if global_args['db']:
         run = DummyRun()
         dpe_args.workers, transformer_args.workers = 0, 0  # No multiprocessing in debug mode
@@ -472,7 +483,8 @@ def main():
     # Run training under the same run
     res, pe = train_dpe(run=run, **dpe_args.__dict__)
     _ = train_transformer(pe, run=run, **transformer_args.__dict__)
-    wandb.finish()
+    if not global_args['db']:
+        wandb.finish()
 
 
 if __name__ == '__main__':

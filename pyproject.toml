@@ -1,0 +1,20 @@
+[project]
+name = "prototypical-ensemble-med"
+version = "0.1.0"
+description = "DPE-Former research code for fairness-oriented medical classification under hidden bias."
+readme = "README.md"
+requires-python = ">=3.10"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+extend-exclude = [".venv", "wandb"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "single"
+indent-style = "space"
+line-ending = "auto"
