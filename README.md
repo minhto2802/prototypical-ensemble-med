@@ -1,44 +1,61 @@
-# Shift Happens: DPE-Former for fair medical classification
+<div align="center">
 
-[![Paper](https://img.shields.io/badge/paper-IJCARS%202026-0f766e)](https://doi.org/10.1007/s11548-026-03624-0)
-[![Python](https://img.shields.io/badge/python-3.10%2B-3776ab)](https://www.python.org/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.2%2B-ee4c2c)](https://pytorch.org/)
+# Shift Happens
 
-Official research code for **DPE-Former**, a fairness-oriented framework for medical classification under hidden bias. The method learns a diverse ensemble of prototype classifiers and uses a transformer to adaptively aggregate their predictions. It is designed for settings where clinically relevant subgroups are latent, incompletely annotated, or unavailable during training.
+### A fairness-oriented framework for medical classification under hidden bias
 
-> **Paper:** [*Shift Happens: A Fairness-Oriented Framework for Medical Classification under Hidden Bias*](https://doi.org/10.1007/s11548-026-03624-0), *International Journal of Computer Assisted Radiology and Surgery* (IJCARS), 2026.
+[![Paper](https://img.shields.io/badge/IJCARS-2026-12304A?style=for-the-badge)](https://doi.org/10.1007/s11548-026-03624-0)
+[![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.2+-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white)](https://pytorch.org/)
+
+**DPE-Former learns complementary prototype classifiers and lets attention decide how to combine them—without requiring subgroup labels during training.**
+
+[Paper](https://doi.org/10.1007/s11548-026-03624-0) · [Project page](https://minhto2802.github.io/posts/shift-happens.html) · [Quick start](#quick-start) · [Citation](#citation)
+
+</div>
+
+<br>
 
 <p align="center">
-  <img src="assets/framework.svg" alt="DPE-Former: encoder, diverse prototype ensemble, and transformer aggregation" width="900">
+  <img src="assets/framework.png" alt="Published DPE-Former framework showing feature extraction, diverse prototype learning, and transformer aggregation" width="920">
 </p>
 
-## Overview
+<p align="center"><sub>Figure from the paper: DPE-Former moves from a standard feature extractor to diverse class prototypes, then aggregates their predictions with a transformer encoder.</sub></p>
 
-Standard empirical-risk minimization can yield strong aggregate performance while failing for patients from underrepresented acquisition sites, demographics, or other hidden subpopulations. DPE-Former addresses this with three stages:
+---
 
-1. **Feature extraction:** train an encoder using standard supervised learning.
-2. **Diverse prototypical ensemble:** learn complementary prototype heads on balanced subsets, encouraging coverage of latent population variation.
-3. **Transformer aggregation:** attend across the prototype predictions to produce an adaptive final prediction.
+## The problem
 
-The paper evaluates the approach on prostate ultrasound, dermoscopy, and cardiac tabular data. It reports more consistent performance across underrepresented groups than the comparison methods considered in the study.
+A medical classifier can look strong on average and still fail systematically for patients from a particular hospital, scanner, demographic, or acquisition protocol. These groups are often hidden, incomplete, or unavailable when the model is trained.
 
-## Repository layout
+DPE-Former is built for that setting. It seeks more consistent performance across latent subpopulations while preserving strong overall classification performance.
 
-```text
-faimi2025/                 DPE-Former training pipeline and SLURM launchers
-  main.py                  two-stage prototype + transformer experiment entry point
-  scripts/                 dataset-specific launch configurations
-  utils/                   data loading, metrics, models, and training utilities
-main_v1.py                 earlier image-model training pipeline
-utils/                     shared utilities used by the legacy pipeline
-assets/                    architecture illustration and affiliation marks
-```
+## How DPE-Former works
 
-`faimi2025/` is the recommended entry point for the DPE-Former experiments. `main_v1.py` is retained for the earlier image-training workflow and checkpoint/feature preparation.
+| 01 — Represent | 02 — Diversify | 03 — Attend |
+| :--- | :--- | :--- |
+| Train a supervised encoder and extract patient-level embeddings. | Learn multiple prototype heads on balanced subsets so each can capture a different decision pattern. | Use a transformer to model relationships between prototype predictions and produce an adaptive final decision. |
 
-## Setup
+The result is a group-unaware training strategy: subgroup annotations are used for evaluation, not required as training supervision.
 
-The code uses `match` statements and therefore requires **Python 3.10 or newer**. A CUDA-enabled PyTorch installation is recommended for the full experiments.
+## Evaluation domains
+
+| Domain | Modality | Hidden shift studied |
+| :--- | :--- | :--- |
+| Prostate cancer detection | Ultrasound | Clinical centre and acquisition differences |
+| Skin-lesion classification | Dermoscopy | Class, visual, and demographic imbalance |
+| Acute coronary syndrome treatment | Clinical tabular data | Latent treatment subgroups |
+
+Across the study settings, DPE-Former improves performance for underrepresented groups and yields more consistent subgroup behavior than the comparison approaches evaluated in the paper.
+
+> [!IMPORTANT]
+> This is research software, not a medical device. Do not use model outputs for diagnosis or treatment decisions without independent clinical validation, governance, and regulatory review.
+
+## Quick start
+
+### 1. Create an environment
+
+The code uses Python pattern matching and requires **Python 3.10 or newer**. A CUDA-enabled PyTorch installation is recommended for the full experiments.
 
 ```bash
 git clone https://github.com/minhto2802/prototypical-ensemble-med.git
@@ -46,31 +63,29 @@ cd prototypical-ensemble-med
 
 python -m venv .venv
 source .venv/bin/activate
-pip install --upgrade pip
+python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-Install the PyTorch build appropriate for your CUDA runtime if the default wheel is not suitable; see the [PyTorch installation guide](https://pytorch.org/get-started/locally/).
+If needed, install the PyTorch build matching your CUDA runtime from the [official installation guide](https://pytorch.org/get-started/locally/).
 
-## Data and expected inputs
+### 2. Prepare features
 
-No patient data or pretrained checkpoints are distributed in this repository. Prepare data in accordance with the governing dataset licenses, ethics approvals, and institutional policies.
-
-For the feature-based DPE-Former entry point, `--data_dir` should contain the pre-extracted split features and `--metadata_path` should point to the corresponding CSV:
+Patient data and pretrained checkpoints are not distributed in this repository. The feature-based pipeline expects:
 
 ```text
-data_dir/
-  feats_tr.npy             # optional, depending on the selected train split
-  feats_va.npy
-  feats_te.npy
-metadata.csv               # includes split, filename, y, a, and optionally g columns
+embeddings/my_dataset/
+├── feats_tr.npy           # optional when another split is used for training
+├── feats_va.npy
+├── feats_te.npy
+└── metadata.csv           # split, filename, y, a, and optionally g
 ```
 
-The included launchers use validation features as the prototype-training split (`--dpe.trn_split va`). This follows the experiment configuration in the repository. Keep patient-level splits intact and do not use protected or clinical attributes beyond what is authorized for the study.
+Preserve patient-level splits and follow the dataset's ethics approval, data-use agreement, and institutional policy.
 
-## Running DPE-Former
+### 3. Run an experiment
 
-Run from `faimi2025/` so its local `utils` package is resolved:
+Run the DPE-Former pipeline from `faimi2025/` so its local utilities resolve correctly:
 
 ```bash
 cd faimi2025
@@ -88,14 +103,28 @@ python main.py \
   --t.ff_dim 512
 ```
 
-`--db true` uses the repository's no-op tracking run for local debugging. Omit it to log to Weights & Biases. The scripts in [`faimi2025/scripts`](faimi2025/scripts) are SLURM templates for the HAM10000, BK, and tabular experiments; review paths, accounts, GPU resources, and tracking group names before submitting a job.
+`--db true` selects the no-op logger for local debugging. Omit it to log with Weights & Biases. Dataset-specific SLURM templates are available in [`faimi2025/scripts`](faimi2025/scripts); review paths, accounts, GPU resources, and run names before submission.
 
-## Reproducibility notes
+## Repository map
 
-- Set `--seed` to control Python, NumPy, and PyTorch random seeds.
-- Persist the feature extractor checkpoint and generated `feats_*.npy` files with each run.
-- Report overall, balanced, and worst-group accuracy together; aggregate accuracy alone can obscure subgroup failures.
-- Run on de-identified data only and avoid interpreting model outputs as clinical recommendations.
+```text
+.
+├── faimi2025/
+│   ├── main.py            # recommended DPE-Former entry point
+│   ├── scripts/           # dataset-specific SLURM launchers
+│   └── utils/             # models, datasets, metrics, and training loops
+├── main_v1.py             # earlier image-model training pipeline
+├── utils/                 # utilities used by the earlier pipeline
+└── assets/                # paper figure and authentic affiliation marks
+```
+
+## Reproducibility checklist
+
+- Fix `--seed` for Python, NumPy, and PyTorch.
+- Version the feature-extractor checkpoint with each `feats_*.npy` set.
+- Keep patient-level train, validation, and test partitions fixed.
+- Report overall accuracy, balanced accuracy, and worst-group accuracy together.
+- Record the metadata schema and the precise meaning of every evaluation group.
 
 ## Citation
 
@@ -111,15 +140,23 @@ python main.py \
 
 ## Affiliations
 
-<p align="center">
-  <a href="https://www.ubc.ca/"><img src="assets/affiliations/ubc.svg" alt="University of British Columbia" height="76"></a>
-  <a href="https://www.queensu.ca/"><img src="assets/affiliations/queens.svg" alt="Queen's University" height="76"></a>
-  <a href="https://www.vch.ca/locations-services/vancouver-general-hospital"><img src="assets/affiliations/vgh.svg" alt="Vancouver General Hospital" height="76"></a>
-  <a href="https://www.utoronto.ca/"><img src="assets/affiliations/utoronto.svg" alt="University of Toronto" height="76"></a>
-</p>
+<table>
+  <tr>
+    <td align="center" width="25%"><a href="https://www.ubc.ca/"><img src="assets/affiliations/ubc.svg" alt="University of British Columbia" width="200"></a></td>
+    <td align="center" width="25%"><a href="https://www.queensu.ca/"><img src="assets/affiliations/queens.svg" alt="Queen's University" width="150"></a></td>
+    <td align="center" width="25%"><a href="https://www.vch.ca/en/location/vancouver-general-hospital"><img src="assets/affiliations/vancouver-hospital.svg" alt="Vancouver Hospital" width="150"></a></td>
+    <td align="center" width="25%"><a href="https://www.utoronto.ca/"><img src="assets/affiliations/utoronto.png" alt="University of Toronto" width="190"></a></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>University of British Columbia</sub></td>
+    <td align="center"><sub>Queen's University</sub></td>
+    <td align="center"><sub>Vancouver General Hospital</sub></td>
+    <td align="center"><sub>University of Toronto</sub></td>
+  </tr>
+</table>
 
-The affiliation marks above are compact, project-local wordmarks created for this repository; institutional names and marks remain the property of their respective organizations.
+Logo provenance and reuse notes are documented in [`assets/affiliations/README.md`](assets/affiliations/README.md). Institutional names and marks remain the property of their respective organizations; their appearance here does not imply endorsement.
 
 ## Acknowledgements
 
-This work was supported in part by CIHR and NSERC. Data were provided with appropriate ethical permissions. Please see the paper for the full ethics, funding, and disclosure statements.
+This work was supported in part by CIHR and NSERC. Data were provided with appropriate ethical permissions. See the paper for the complete ethics, funding, author-contribution, and disclosure statements.
