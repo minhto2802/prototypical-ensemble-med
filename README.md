@@ -10,7 +10,11 @@
 
 **DPE-Former learns complementary prototype classifiers and lets attention decide how to combine them—without requiring subgroup labels during training.**
 
-[Paper](https://doi.org/10.1007/s11548-026-03624-0) · [Project page](https://minhto2802.github.io/posts/shift-happens.html) · [Quick start](#quick-start) · [Citation](#citation)
+[Paper](https://doi.org/10.1007/s11548-026-03624-0) · [Project page](https://minhto2802.github.io/posts/shift-happens.html) · [Results](#results) · [Quick start](#quick-start) · [Citation](#citation)
+
+<sub>Minh Nguyen Nhat To, Diane Kim, Mohamed Harmanani, Paul F. R. Wilson, Fahimeh Fooladgar, Samira Sojoudi, Amoon Jamzad, Sherif Abdalla, Teresa Tsang, Christina Luong, Silvia Chang, Peter Black, Robert Siemens, Michael Leveridge, Rahul G. Krishnan, Parvin Mousavi, Purang Abolmaesumi</sub>
+
+<sub><i>International Journal of Computer Assisted Radiology and Surgery</i> <b>21</b>, 1025–1032 (2026)</sub>
 
 </div>
 
@@ -46,10 +50,48 @@ The result is a group-unaware training strategy: subgroup annotations are used f
 | Skin-lesion classification | Dermoscopy | Class, visual, and demographic imbalance |
 | Acute coronary syndrome treatment | Clinical tabular data | Latent treatment subgroups |
 
-Across the study settings, DPE-Former improves performance for underrepresented groups and yields more consistent subgroup behavior than the comparison approaches evaluated in the paper.
-
 > [!IMPORTANT]
 > This is research software, not a medical device. Do not use model outputs for diagnosis or treatment decisions without independent clinical validation, governance, and regulatory review.
+
+## Results
+
+All values in per cent, averaged over three random seeds, with early stopping on validation worst-group accuracy. **ACC** is overall accuracy, **BA** is balanced accuracy averaged over classes, and **WGA** is worst-group accuracy — the lowest-scoring subgroup.
+
+| Method | Prostate US<br>ACC | Prostate US<br>BA | Prostate US<br>WGA | HAM10000<br>ACC | HAM10000<br>BA | HAM10000<br>WGA | Cardiac<br>ACC | Cardiac<br>BA | Cardiac<br>WGA |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| ERM | — | — | — | 78.4 | 80.1 | 66.7 | 62.0 | 60.7 | 35.7 |
+| MedSAM | **75.4** | 66.1 | 38.1 | — | — | — | — | — | — |
+| Cinepro | 74.5 | 64.3 | 38.1 | — | — | — | — | — | — |
+| DFR | 66.7 | 63.8 | 50.3 | 81.0 | **84.0** | 72.5 | 67.9 | 71.6 | 38.1 |
+| DPE | 66.3 | 65.7 | 58.7 | 80.4 | 83.5 | 75.3 | 67.5 | 68.8 | 42.9 |
+| **DPE-Former** | 66.1 | **66.3** | **60.2** | **82.9** | 83.6 | **75.6** | **68.6** | **73.1** | **62.5** |
+
+Bold marks the best value in each column. Em dashes mark configurations that are not reported: MedSAM and Cinepro are ultrasound-specific, and ERM is not listed separately for prostate ultrasound because the MedSAM and Cinepro rows are themselves ERM classifiers trained on features from their respective encoders.
+
+DPE-Former achieves the best worst-group accuracy on all three datasets while remaining competitive on balanced accuracy. The margin is largest on the cardiac tabular data, where it reaches 62.5% WGA against 42.9% for DPE and 38.1% for DFR, and simultaneously records the highest balanced accuracy at 73.1%.
+
+### Ablations
+
+<p align="center">
+  <img src="assets/ablation.png" alt="Ablation results on the prostate ultrasound dataset: balanced and worst-group accuracy against the number of prototypes, and a comparison of aggregation strategies" width="920">
+</p>
+
+<p align="center"><sub>Ablations on prostate ultrasound. (a) Effect of the number of prototypes. (b) Comparison of aggregation strategies. Each experiment is repeated three times.</sub></p>
+
+- **Diversity helps, then saturates.** Balanced accuracy rises from about 64% with two prototypes to roughly 66% at around six, then holds steady out to fifty. Worst-group accuracy follows the same shape, climbing from roughly 53% to just above 60%.
+- **Learned aggregation beats fixed rules.** Voting, bagging, and stacking reach roughly 58%, 60%, and 63% balanced accuracy, with worst-group accuracy below 50% in each case. The transformer aggregator reaches about 67% balanced and 61% worst-group accuracy in the same setting.
+- **Subgroup labels are not the deciding factor.** On the cardiac data, GroupDRO — which does see subgroup labels during training — records 66.5 ± 2.1% ACC, 65.4 ± 2.5% BA, and 47.6 ± 6.1% WGA, below DPE-Former on all three despite the extra supervision.
+
+### Experimental setup
+
+Encoders are dataset-specific: a fully fine-tuned MedSAM-based model with biopsy-level supervision for prostate ultrasound, ImageNet-pretrained ResNet-50 for HAM10000, and TabPFN embeddings for the cardiac tabular data. Prototype classifiers and the transformer aggregator are trained with Adam at a learning rate of 1e-4 and batch size 64, for up to 100 epochs with early stopping on validation WGA. Hyperparameters are selected on a stratified validation subset, and all reported metrics come from held-out test patients with no overlap across splits.
+
+### Limitations
+
+- Balanced and worst-group accuracy show whether accuracy is even across groups, but not which kinds of error occur within each group.
+- The transformer models prototype interactions effectively, but its decisions remain hard to interpret.
+- Evaluation covers datasets with known subgroup variability; larger, more heterogeneous cohorts with overlapping subgroup structure may behave differently.
+- The aggregator architecture was chosen for stable optimisation rather than exhaustive search.
 
 ## Quick start
 
@@ -115,7 +157,7 @@ python main.py \
 │   └── utils/             # models, datasets, metrics, and training loops
 ├── main_v1.py             # earlier image-model training pipeline
 ├── utils/                 # utilities used by the earlier pipeline
-└── assets/                # paper figure and authentic affiliation marks
+└── assets/                # paper figures and authentic affiliation marks
 ```
 
 ## Reproducibility checklist
@@ -128,11 +170,26 @@ python main.py \
 
 ## Citation
 
+To, M. N. N., Kim, D., Harmanani, M. et al. Shift happens: a fairness-oriented framework for medical classification under hidden bias. *Int J CARS* **21**, 1025–1032 (2026).
+
 ```bibtex
 @article{to2026shifthappens,
-  title   = {Shift Happens: A Fairness-Oriented Framework for Medical Classification under Hidden Bias},
-  author  = {To, Minh Nguyen Nhat and Kim, Diane and Harmanani, Mohamed and Wilson, Paul F. R. and Fooladgar, Fahimeh and others},
-  journal = {International Journal of Computer Assisted Radiology and Surgery},
+  title   = {Shift happens: a fairness-oriented framework for
+             medical classification under hidden bias},
+  author  = {To, Minh Nguyen Nhat and Kim, Diane and
+             Harmanani, Mohamed and Wilson, Paul F. R. and
+             Fooladgar, Fahimeh and Sojoudi, Samira and
+             Jamzad, Amoon and Abdalla, Sherif and
+             Tsang, Teresa and Luong, Christina and
+             Chang, Silvia and Black, Peter and
+             Siemens, Robert and Leveridge, Michael and
+             Krishnan, Rahul G. and Mousavi, Parvin and
+             Abolmaesumi, Purang},
+  journal = {International Journal of Computer Assisted
+             Radiology and Surgery},
+  volume  = {21},
+  number  = {5},
+  pages   = {1025--1032},
   year    = {2026},
   doi     = {10.1007/s11548-026-03624-0}
 }
